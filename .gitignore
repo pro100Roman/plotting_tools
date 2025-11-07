@@ -1,4 +1,2 @@
-# python files
-.pyd
-# shell scripts
-.sh
+*.pyd
+*.sh
