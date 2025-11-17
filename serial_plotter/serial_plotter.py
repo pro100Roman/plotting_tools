@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
 # ===================== CONFIG (edit here) =====================
-TIMEOUT_S           = 0.01                         # serial read timeout (seconds)
+TIMEOUT_S           = 1                            # serial read timeout (seconds)
 DATA_SAMPLE_RATE_HZ = 200                          # expected data rate (for reference only)
 TIME_INC            = 1000 // DATA_SAMPLE_RATE_HZ  # expected time increment between samples (for reference only)
 MAX_FPS             = 20                           # plot refresh rate (frames per second)
@@ -47,27 +47,6 @@ def parse_line(line: str, keys):
         vals[k] = float(m.group(1))
     return vals
 
-def pop_next_line_from_buf(buf: bytearray):
-    """Pop the next decoded text line from buf handling CR, LF, or CRLF. Returns str or None."""
-    if not buf:
-        return None
-    nl = buf.find(b"\n")
-    cr = buf.find(b"\r")
-    candidates = [i for i in (nl, cr) if i >= 0]
-    if not candidates:
-        return None
-    idx = min(candidates)
-    line_bytes = buf[:idx]
-    end_char = buf[idx:idx+1]
-    del buf[:idx+1]
-    # handle CRLF
-    if end_char == b"\r" and buf[:1] == b"\n":
-        del buf[:1]
-    try:
-        return line_bytes.decode("utf-8", errors="replace")
-    except Exception:
-        return line_bytes.decode("latin-1", errors="replace")
-
 def serial_reader(port, baud, timeout_s, out_q: queue.Queue, stop_event: threading.Event, args=None):
     """Background thread: read bytes, split lines, parse, push samples to out_q."""
     try:
@@ -84,6 +63,7 @@ def serial_reader(port, baud, timeout_s, out_q: queue.Queue, stop_event: threadi
     # Try to open serial
     try:
         ser = serial.Serial(port=port, baudrate=baud, timeout=timeout_s)
+        ser.flush()
     except Exception as e:
         try:
             import serial.tools.list_ports as lp
@@ -102,17 +82,11 @@ def serial_reader(port, baud, timeout_s, out_q: queue.Queue, stop_event: threadi
     buf = bytearray()
     start = time.monotonic()
     last_rx = start
-
     try:
         while not stop_event.is_set():
-            chunk = ser.readline()
-            if chunk:
-                buf.extend(chunk)
-                last_rx = time.monotonic()
-
-            # Extract any complete lines available
+            last_rx = time.monotonic()
             while True:
-                line = pop_next_line_from_buf(buf)
+                line = f"{ser.readline()}"
                 if line is None:
                     break
                 if line != "" and args.o:
@@ -120,7 +94,6 @@ def serial_reader(port, baud, timeout_s, out_q: queue.Queue, stop_event: threadi
                 vals = parse_line(line, args.k)
                 if vals is not None:
                     if args.st is None:
-                        # Use expected time increment between samples (for reference only)
                         t_rel = (time.monotonic() - start)
                     else:
                         t_rel += args.st
@@ -148,11 +121,11 @@ def on_close(event, stop_event):
 
 def main():
     p = argparse.ArgumentParser(description="Plot data from serial port")
-    p.add_argument("-p",  required=False, default="/dev/tty.usbmodem143300", help="serial port, e.g. /dev/cu.usbmodem143302, COM3")
+    p.add_argument("-p",  required=False, default="/dev/tty.usbserial-1444100", help="serial port, e.g. /dev/cu.usbmodem143302, COM3")
     p.add_argument("-b",  default=115200, help="serial port baud rate, default=115200")
-    p.add_argument("-k",  default=("out",), nargs="+", help="key word to find")
+    p.add_argument("-k",  default=("out", "down", "up",), nargs="+", help="key word to find")
     p.add_argument("-wp", default=500, type=int, help="number of data points to show")
-    p.add_argument("-st", default=None, type=int, help="time between samples in ms")
+    p.add_argument("-st", default=5,   type=int, help="time between samples in ms")
     p.add_argument("-f",  help="if set data will be saved to this file")
     p.add_argument("-o",  action="store_true", help="show input data")
     p.add_argument("-n",  dest="name", default="test", help="plot name")
