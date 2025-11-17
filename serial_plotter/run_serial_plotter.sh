@@ -1,5 +1,5 @@
 #!/bin/bash
-SCRIPT_DIR="./"
+SCRIPT_DIR="/Users/roman/Work/Tools/Software"
 echo $SCRIPT_DIR
 source "$SCRIPT_DIR/.venv/bin/activate"
 python "$SCRIPT_DIR/serial_plotter/serial_plotter.py" "$@"

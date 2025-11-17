@@ -1,43 +1,16 @@
 #!/usr/bin/env python3
 
-"""
-UART live parser & plotter + CSV logger (last N points on screen, full stream to CSV).
-
-Edit ONLY the CONFIG block below to set serial params and KEYS.
-
-Features:
-- Reads UART line-by-line (CR, LF, or CRLF).
-- Parses values for configured KEYS (e.g., "out", "high", "low", "heading").
-- Accepts **key=value** or **key:value** forms.
-- Live-updates a plot to show the last WINDOW_POINTS samples for each key.
-- Optionally logs every parsed sample to CSV in real time.
-
-Install once:
-    pip install pyserial matplotlib
-"""
-
-from datetime import datetime
-
 # ===================== CONFIG (edit here) =====================
-PORT                = "/dev/tty.usbmodem143302"
-BAUD                = 115200
 TIMEOUT_S           = 0.01                         # serial read timeout (seconds)
 DATA_SAMPLE_RATE_HZ = 200                          # expected data rate (for reference only)
 TIME_INC            = 1000 // DATA_SAMPLE_RATE_HZ  # expected time increment between samples (for reference only)
-
-KEYS            = ("out",)       # <— set your keys here in ONE place
-ANY_ORDER       = True               # True: keys can appear in any order within the line
-                                     # False: keys must appear in order; other text allowed between them
-
-WINDOW_POINTS   = 6000               # show the last N points (e.g., 600 @ 20 Hz ≈ 30 s window)
-MAX_FPS         = 20                 # plot refresh rate (frames per second)
-
-IDLE_EXIT_SEC   = None               # set to a number to auto-exit if no bytes arrive for this many seconds
-SAVE_FINAL_PNG  = None               # e.g., "final_plot.png" to save on exit, or None to skip
-
-CSV_APPEND      = True              # True: append to existing file (write header only if file empty)
+MAX_FPS             = 20                           # plot refresh rate (frames per second)
+IDLE_EXIT_SEC       = None                         # set to a number to auto-exit if no bytes arrive for this many seconds
+SAVE_FINAL_PNG      = None                         # e.g., "final_plot.png" to save on exit, or None to skip
+CSV_APPEND          = True                         # True: append to existing file (write header only if file empty)
 # ===============================================================
 
+from datetime import datetime
 import argparse
 import re
 import sys
@@ -47,38 +20,28 @@ import queue
 from collections import deque
 import csv, os
 import logging
+import matplotlib.pyplot as plt
+import matplotlib.animation as animation
 
 logger = logging.getLogger('serial data')
 logger.setLevel(logging.INFO)
 handler = logging.StreamHandler()
-# formatter = logging.Formatter('[%(levelname)s] %(message)s')
 formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
 handler.setFormatter(formatter)
 logger.addHandler(handler)
 
-NUMBER_RE = r"-?\d+(?:\.\d+)?"
-INORDER_RE = None
-def read_input(in_q: queue.Queue):
+def keyboard_input(in_q: queue.Queue):
     """Reads user input and pushes it to the queue."""
     while True:
         line = sys.stdin.readline()
         in_q.put(line)
 
 def parse_line(line: str, keys):
-    """
-    Try to parse the configured KEYS from a line.
-    Returns {key: float, ...} or None if not all keys found.
-    """
-    if not ANY_ORDER and INORDER_RE is not None:
-        m = INORDER_RE.search(line)
-        if not m:
-            return None
-        return {k: float(m.group(k)) for k in keys}
-
+    number_re = r"-?\d+(?:\.\d+)?"
     # Any-order: per-key search (accept ":" or "=" with optional spaces)
     vals = {}
     for k in keys:
-        m = re.search(rf"\b{re.escape(k)}\s*[:=]\s*({NUMBER_RE})\b", line)
+        m = re.search(rf"\b{re.escape(k)}\s*[:=]\s*({number_re})\b", line)
         if not m:
             return None
         vals[k] = float(m.group(1))
@@ -133,7 +96,7 @@ def serial_reader(port, baud, timeout_s, out_q: queue.Queue, stop_event: threadi
     
     t_rel = 0
     logger.info(f"Opened {ser.port} @ {ser.baudrate} (timeout={ser.timeout}s)")
-    logger.info(f"Keys={args.k} any_order={ANY_ORDER}")
+    logger.info(f"Keys={args.k}")
     logger.info("Reading... Close the plot window or Ctrl+C to stop.")
 
     buf = bytearray()
@@ -185,27 +148,15 @@ def on_close(event, stop_event):
 
 def main():
     p = argparse.ArgumentParser(description="Plot data from serial port")
-    p.add_argument("-p",  required=False, default=PORT, help="serial port, e.g. /dev/cu.usbmodem143302, COM3")
+    p.add_argument("-p",  required=False, default="/dev/tty.usbmodem143300", help="serial port, e.g. /dev/cu.usbmodem143302, COM3")
     p.add_argument("-b",  default=115200, help="serial port baud rate, default=115200")
-    p.add_argument("-k",  default=KEYS, nargs="+", help="key word to find")
-    p.add_argument("-wp", default=WINDOW_POINTS, type=int, help="number of data points to show")
+    p.add_argument("-k",  default=("out",), nargs="+", help="key word to find")
+    p.add_argument("-wp", default=500, type=int, help="number of data points to show")
     p.add_argument("-st", default=None, type=int, help="time between samples in ms")
     p.add_argument("-f",  help="if set data will be saved to this file")
     p.add_argument("-o",  action="store_true", help="show input data")
+    p.add_argument("-n",  dest="name", default="test", help="plot name")
     args = p.parse_args()
-
-    if not ANY_ORDER:
-    # Build a tolerant in-order regex that allows arbitrary text between keys,
-    # and accepts either ":" or "=" as the separator with optional whitespace.
-        parts = []
-        for i, k in enumerate(KEYS):
-            named = rf"{re.escape(k)}\s*[:=]\s*(?P<{k}>{NUMBER_RE})"
-            if i == 0:
-                parts.append(named)
-            else:
-                parts.append(rf".*?{named}")
-        global INORDER_RE 
-        INORDER_RE = re.compile("".join(parts))
 
     # Queues & thread
     out_q = queue.Queue()
@@ -214,7 +165,7 @@ def main():
     reader.start()
 
     in_q = queue.Queue()
-    keyboard_thread = threading.Thread(target=read_input, args=(in_q,), daemon=True)
+    keyboard_thread = threading.Thread(target=keyboard_input, args=(in_q,), daemon=True)
     keyboard_thread.start()
 
     # CSV logging setup
@@ -229,14 +180,6 @@ def main():
         if not CSV_APPEND or (CSV_APPEND and (not os.path.exists(csv_file) or os.path.getsize(csv_file) == 0)):
             csv_wr.writerow(['t', *args.k])
         logger.info(f"Logging to CSV: {csv_file} (append={CSV_APPEND})")
-
-    # Live plot setup
-    try:
-        import matplotlib
-    except Exception:
-        import matplotlib
-        matplotlib.use("Agg")
-    import matplotlib.pyplot as plt
 
     fig, ax = plt.subplots(figsize=(10, 5))
     fig.canvas.mpl_connect('close_event', lambda event: on_close(event, stop_event))
@@ -253,7 +196,7 @@ def main():
 
     ax.set_xlabel("Time [s]")
     ax.set_ylabel("Value")
-    ax.set_title("serial data")
+    ax.set_title(args.name)
     ax.legend(loc='upper right', bbox_to_anchor=(1, 1))
     ax.grid(True, linestyle="--", alpha=0.5)
 
@@ -326,7 +269,7 @@ def main():
                 csv_fp.flush()
 
             # GUI events
-            plt.pause(0.001)
+            plt.pause(0.05)
 
     except KeyboardInterrupt:
         # stop_event.set()
