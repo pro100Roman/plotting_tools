@@ -5,8 +5,6 @@ TIMEOUT_S           = 1                            # serial read timeout (second
 DATA_SAMPLE_RATE_HZ = 200                          # expected data rate (for reference only)
 TIME_INC            = 1000 // DATA_SAMPLE_RATE_HZ  # expected time increment between samples (for reference only)
 MAX_FPS             = 20                           # plot refresh rate (frames per second)
-IDLE_EXIT_SEC       = None                         # set to a number to auto-exit if no bytes arrive for this many seconds
-SAVE_FINAL_PNG      = None                         # e.g., "final_plot.png" to save on exit, or None to skip
 CSV_APPEND          = True                         # True: append to existing file (write header only if file empty)
 # ===============================================================
 
@@ -102,10 +100,6 @@ def serial_reader(port, baud, timeout_s, out_q: queue.Queue, stop_event: threadi
                     logger.warning(f"Unparsed line: {line}")
                     buf.clear()
 
-            # Optional idle exit
-            if IDLE_EXIT_SEC is not None and (time.monotonic() - last_rx) >= IDLE_EXIT_SEC:
-                logger.info(f"Idle for {IDLE_EXIT_SEC}s; stopping reader.")
-                break
     except Exception as e:
         logger.error(f"Reader error: {e}")
     finally:
@@ -115,6 +109,18 @@ def serial_reader(port, baud, timeout_s, out_q: queue.Queue, stop_event: threadi
             pass
         stop_event.set()
         logger.info("Reader stopped.]")
+
+def plot_update(frame, ready_event:threading.Event, sc, ax, lines):
+    # Update data each frame
+    if ready_event.is_set():
+        ready_event.clear()
+        for line_i in lines:
+            line.set_data(x_buf, y_buf)
+
+        ax.relim()
+        ax.autoscale_view(scaley=True)
+
+    return sc,
 
 def on_close(event, stop_event):
         stop_event.set()
@@ -147,12 +153,11 @@ def main():
     csv_file = f"{args.f}_{datetime.now().strftime('%Y-%m-%d_%H_%M_%S')}.csv"
 
     if args.f:
-        mode = 'a' if CSV_APPEND else 'w'
-        csv_fp = open(csv_file, mode, newline='')
+        csv_fp = open(csv_file, "w", newline='')
         csv_wr = csv.writer(csv_fp)
-        if not CSV_APPEND or (CSV_APPEND and (not os.path.exists(csv_file) or os.path.getsize(csv_file) == 0)):
+        if not os.path.exists(csv_file) or os.path.getsize(csv_file) == 0:
             csv_wr.writerow(['t', *args.k])
-        logger.info(f"Logging to CSV: {csv_file} (append={CSV_APPEND})")
+        logger.info(f"Logging to CSV: {csv_file}")
 
     fig, ax = plt.subplots(figsize=(10, 5))
     fig.canvas.mpl_connect('close_event', lambda event: on_close(event, stop_event))
@@ -182,7 +187,6 @@ def main():
     single_csv_wr = None
     try:
         while not stop_event.is_set():
-
             try:
                 single_csv_file = in_q.get_nowait()
                 if single_csv_file:
@@ -245,21 +249,12 @@ def main():
             plt.pause(0.05)
 
     except KeyboardInterrupt:
-        # stop_event.set()
         raise
     
     except Exception as e:
-        # Handle other potential exceptions
         logger.error(f"An unexpected error occurred: {e}")
 
     finally:
-        if SAVE_FINAL_PNG:
-            try:
-                fig.tight_layout()
-                fig.savefig(SAVE_FINAL_PNG, dpi=150)
-                logger.info(f"Saved final plot: {SAVE_FINAL_PNG}")
-            except Exception as e:
-                logger.warning(f"Could not save final plot: {e}")
         plt.close(fig)
         stop_event.set()
         reader.join(timeout=0.1)
