@@ -72,7 +72,6 @@ def serial_reader(port, baud, timeout_s, x_buf:deque, y_bufs:deque, out_q: queue
     logger.info(f"Keys={args.k}")
     logger.info("Reading... Close the plot window or Ctrl+C to stop.")
 
-    buf = bytearray()
     start = time.monotonic()
     try:
         while not stop_event.is_set():
@@ -98,7 +97,6 @@ def serial_reader(port, baud, timeout_s, x_buf:deque, y_bufs:deque, out_q: queue
 
                 elif line != "":
                     logger.warning(f"Unparsed line: {line}")
-                    buf.clear()
 
     except Exception as e:
         logger.error(f"Reader error: {e}")
@@ -173,9 +171,7 @@ def main():
     plt.ion()
     fig, ax = plt.subplots(figsize=(10, 5))
     fig.canvas.mpl_connect('close_event', lambda event: on_close(event, stop_event))
-    anim = None
 
-    # Create one Line2D per key
     lines = {}
     for k in args.k:
         line, = ax.plot([], [], label=k)  # no explicit colors
@@ -239,8 +235,6 @@ def main():
                 csv_wr.writerows(rows_to_write)
                 csv_fp.flush()
 
-
-            # GUI events
             plt.pause(0.01)
 
     except KeyboardInterrupt:
