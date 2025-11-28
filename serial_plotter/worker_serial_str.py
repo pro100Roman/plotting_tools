@@ -91,7 +91,7 @@ def serial_reader(logger, regex, ser, keys, x_src, y_src, ready_event, stop_even
                         else:
                             t_rel += x_delta
 
-                        x_src.append(t_rel)
+                        x_src.append(t_rel / 1000)
                         for k in keys:
                             y_src[k].append(vals[k])
                         if not ready_event.is_set():

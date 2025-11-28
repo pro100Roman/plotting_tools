@@ -108,7 +108,7 @@ def main():
     anim = animation.FuncAnimation(fig,
                                    plot_update,
                                    fargs=(ax, lines, ready_event, x_buf, y_bufs),
-                                   interval=100,
+                                   interval=25,
                                    blit=False,
                                    cache_frame_data=False)
 
