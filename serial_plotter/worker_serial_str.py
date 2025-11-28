@@ -25,7 +25,7 @@ class SerialStr:
 
         self.port = port
         self.baudrate = baudrate
-        self.timeout = timeout / 1000
+        self.timeout = timeout
         self.stop_event = stop_event
         self.ready_event = ready_event
         self.delta_time = delta_time
@@ -38,7 +38,7 @@ class SerialStr:
         self.logger.info(f"Keys={self.keys}")
 
         try:
-            self.ser = serial.Serial(port=port, baudrate=baudrate, timeout=timeout)
+            self.ser = serial.Serial(port=self.port, baudrate=self.baudrate, timeout=self.timeout)
             self.logger.info(f"Opened '{self.ser.port}' @ {self.ser.baudrate} (timeout={self.ser.timeout}s)")
         except Exception as e:
             try:

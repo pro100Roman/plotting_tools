@@ -39,10 +39,10 @@ def on_close(event, stop_event):
 
 def main():
     p = argparse.ArgumentParser(description="Data plotter")
-    p.add_argument("-w",  dest="worker",   required=True, help="worker script for gathering data, e.g: 'worker_serial_str'")
+    p.add_argument("-w",  dest="worker",   required=True,  help="worker script for gathering data, e.g: 'worker_serial_str'")
     p.add_argument("-p",  dest="port",     required=False, default="/dev/tty.usbserial-1444100", help="serial port, e.g. /dev/cu.usbmodem143302, COM3")
     p.add_argument("-b",  dest="baudrate", default=115200, help="serial port baud rate, default=115200")
-    p.add_argument("-t",  dest="timeout",  default=1, help="serial port timeout in s, default=1")
+    p.add_argument("-t",  dest="timeout",  default=1,      help="serial port timeout in s, default=1")
     p.add_argument("-k",  dest="keys",     default=("out", "down", "up",), nargs="+", help="key word to find")
     p.add_argument("-wp", default=500, type=int, help="number of data points to show")
     p.add_argument("-st", default=5,   type=int, help="time between samples in ms")
@@ -71,13 +71,18 @@ def main():
 
     if args.worker == "worker_serial_str":
         from worker_serial_str import SerialStr
-        worker = SerialStr(
-            log_file_name,
-            args.port, args.baudrate, args.timeout,
-            stop_event, ready_event,
-            args.st,
-            x_buf, y_bufs
-        )
+        try:
+            worker = SerialStr(
+                log_file_name,
+                args.port, int(args.baudrate), float(args.timeout),
+                stop_event, ready_event,
+                args.st,
+                x_buf, y_bufs
+            )
+        except Exception as e:
+            logger.error(f"An unexpected error occurred: {e}")
+    else:
+        raise Exception("worker script not provided")
 
     worker.start()
 
