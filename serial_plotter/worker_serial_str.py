@@ -8,7 +8,7 @@ import serial
 import serial.tools.list_ports
 import serial.tools.list_ports as lp
 
-class SerialStr:
+class WorkerSerialStr:
     def __init__(
             self, logger_name:str,
             port:str, baudrate:int, timeout:int,
@@ -21,7 +21,7 @@ class SerialStr:
         if logger_name:
             self.logger = logging.getLogger(logger_name)
         else:
-            self.logger = logging.getLogger("worker serial_str")
+            self.logger = logging.getLogger("worker_serial_str")
 
         self.port = port
         self.baudrate = baudrate
@@ -34,7 +34,6 @@ class SerialStr:
         self.regex = regex
 
         self.keys = list(y_src.keys())
-
         self.logger.info(f"Keys={self.keys}")
 
         try:
