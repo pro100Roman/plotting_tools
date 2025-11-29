@@ -1,2 +1,5 @@
-*.pyd
-
+*.pyc
+.DS_Store
+*.log
+/.idea
+/Serial Monitor
