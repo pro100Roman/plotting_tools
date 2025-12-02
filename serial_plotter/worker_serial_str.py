@@ -81,7 +81,7 @@ def serial_reader(logger, regex, ser, keys, x_src, y_src, ready_event, stop_even
                 line = f"{ser.readline()}"
                 if line is None:
                     break
-                if line != "":
+                if line != "b''":
                     logger.info(line)
                     vals = parse_line(line, keys, regex)
                     if vals is not None:
@@ -95,9 +95,6 @@ def serial_reader(logger, regex, ser, keys, x_src, y_src, ready_event, stop_even
                             y_src[k].append(vals[k])
                         if not ready_event.is_set():
                             ready_event.set()
-
-                    elif line != "":
-                        logger.warning(f"Unparsed line: {line}")
 
     except Exception as e:
         logger.error(f"Reader error: {e}")
