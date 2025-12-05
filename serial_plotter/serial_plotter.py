@@ -55,7 +55,7 @@ def main():
     handler.setFormatter(formatter)
     logger.addHandler(handler)
 
-    if args.file and args.worker != "worker_csv":
+    if args.file and args.worker != "worker_csv" and args.worker != "worker_log":
         file_handler = logging.FileHandler(log_file_name)
         file_handler.setFormatter(formatter)
         logger.addHandler(file_handler)
@@ -82,6 +82,17 @@ def main():
         from worker_csv import WorkerCsv
         try:
             worker = WorkerCsv(
+                log_file_name,
+                args.file,
+                stop_event, ready_event,
+                x_buf, y_bufs
+            )
+        except Exception as e:
+            logger.error(f"An unexpected error occurred: {e}")
+    elif args.worker == "worker_log":
+        from worker_log import WorkerLog
+        try:
+            worker = WorkerLog(
                 log_file_name,
                 args.file,
                 stop_event, ready_event,
