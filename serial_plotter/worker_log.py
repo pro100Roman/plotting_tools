@@ -57,7 +57,7 @@ def log_reader(logger, file_log, keys, x_src, y_src, ready_event, stop_event):
                 ts = int(match.group(1).strip())
                 if not offset:
                     offset = ts
-                x_src.append(ts - offset)
+                x_src.append((ts - offset) // 1000)
                 for n in keys:
                     y_src[n].append(data[n])
 

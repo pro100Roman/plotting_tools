@@ -74,10 +74,11 @@ def main():
                 args.port, int(args.baudrate), float(args.timeout),
                 stop_event, ready_event,
                 args.st,
-                x_buf, y_bufs
+                x_src = x_buf, y_src = y_bufs
             )
         except Exception as e:
             logger.error(f"An unexpected error occurred: {e}")
+
     elif args.worker == "worker_csv":
         from worker_csv import WorkerCsv
         try:
@@ -85,10 +86,11 @@ def main():
                 log_file_name,
                 args.file,
                 stop_event, ready_event,
-                x_buf, y_bufs
+                x_src = x_buf, y_src = y_bufs
             )
         except Exception as e:
             logger.error(f"An unexpected error occurred: {e}")
+
     elif args.worker == "worker_log":
         from worker_log import WorkerLog
         try:
@@ -96,7 +98,19 @@ def main():
                 log_file_name,
                 args.file,
                 stop_event, ready_event,
-                x_buf, y_bufs
+                x_src = x_buf, y_src = y_bufs
+            )
+        except Exception as e:
+            logger.error(f"An unexpected error occurred: {e}")
+
+    elif args.worker == "worker_mqtt":
+        from worker_mqtt import WorkerMqtt
+        try:
+            worker = WorkerMqtt(
+                log_file_name,
+                args.name,
+                stop_event, ready_event,
+                x_src = x_buf, y_src = y_bufs
             )
         except Exception as e:
             logger.error(f"An unexpected error occurred: {e}")
