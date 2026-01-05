@@ -6,6 +6,7 @@ from threading import Event
 from threading import Thread
 import os
 from worker_serial_str import parse_line
+from datetime import datetime
 
 class WorkerLog:
     def __init__(
@@ -54,7 +55,14 @@ def log_reader(logger, file_log, keys, x_src, y_src, ready_event, stop_event):
             data = parse_line(line, keys, regex)
             if data:
                 match = re.search(r"b'([^[]+)\[", line)
-                ts = int(match.group(1).strip())
+                if not match:
+                    match = re.search(r"\[(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3})\]", line)
+                    if not match:
+                        continue
+                    ts = int(datetime.strptime(match.group(1), "%Y-%m-%d %H:%M:%S.%f").timestamp() * 1000000)
+                else:
+                    ts = int(match.group(1).strip())
+
                 if not offset:
                     offset = ts
                 x_src.append((ts - offset) // 1000)
