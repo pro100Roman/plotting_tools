@@ -123,14 +123,19 @@ def main():
     keyboard_thread = threading.Thread(target=keyboard_input, args=(in_q,), daemon=True)
     keyboard_thread.start()
 
-    plt.ion()
+    if args.worker != "worker_log":
+        plt.ion()
+
     fig, ax = plt.subplots(figsize=(12, 6))
     fig.canvas.mpl_connect('close_event', lambda event: on_close(event, stop_event))
 
     lines = {}
     for k in args.keys:
-        line, = ax.plot([], [], label=k)  # no explicit colors
-        lines[k] = line
+        if args.worker == "worker_log":
+            line, = ax.plot(x_buf, y_bufs[k], label=k)
+        else:
+            line, = ax.plot([], [], label=k)  # no explicit colors
+            lines[k] = line
 
     ax.set_xlabel("Time [s]")
     ax.set_ylabel("Value")
@@ -138,12 +143,15 @@ def main():
     ax.legend(loc='upper left', bbox_to_anchor=(1, 1))
     ax.grid(True, linestyle="--", alpha=0.5)
 
-    anim = animation.FuncAnimation(fig,
-                                   plot_update,
-                                   fargs=(ax, lines, ready_event, x_buf, y_bufs),
-                                   interval=25,
-                                   blit=False,
-                                   cache_frame_data=False)
+    if args.worker != "worker_log":
+        anim = animation.FuncAnimation(fig,
+                                       plot_update,
+                                       fargs=(ax, lines, ready_event, x_buf, y_bufs),
+                                       interval=1,
+                                       blit=False,
+                                       cache_frame_data=False)
+    else:
+        plt.show()
 
     try:
         while not stop_event.is_set():

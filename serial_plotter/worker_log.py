@@ -7,6 +7,7 @@ from threading import Thread
 import os
 from worker_serial_str import parse_line
 from datetime import datetime
+import alive_progress
 
 class WorkerLog:
     def __init__(
@@ -31,44 +32,41 @@ class WorkerLog:
         self.keys = list(y_src.keys())
         self.logger.info(f"Keys={self.keys}")
 
-        self.logger.info("Reading... Close the plot window or Ctrl+C to stop.")
-
-        self.reader = Thread(
-            target=log_reader,
-            args=(self.logger, self.file_log, self.keys, self.x_src, self.y_src, ready_event, stop_event),
-            daemon=True
-        )
+        self.logger.info("Reading file... Close the plot window or Ctrl+C to stop.")
 
     def start(self):
-        self.reader.start()
+        self.ready_event.clear()
+        log_reader(self.logger, self.file_log, self.keys, self.x_src, self.y_src)
+        self.ready_event.set()
+        # self.reader.start()
 
     def join(self, timeout=None):
-        self.reader.join(timeout)
+        pass
+        # self.reader.join(timeout)
 
 
-def log_reader(logger, file_log, keys, x_src, y_src, ready_event, stop_event):
+def log_reader(logger, file_log, keys, x_src, y_src):
     regex=r"-?\d+(?:\.\d+)?"
     with open(file_log, mode='r', newline='') as file:
         lines = file.readlines()
         offset = None
-        for line in lines:
-            data = parse_line(line, keys, regex)
-            if data:
-                match = re.search(r"b'([^[]+)\[", line)
-                if not match:
-                    match = re.search(r"\[(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3})\]", line)
+
+        with alive_progress.alive_bar(len(lines)) as bar:
+            for line in lines:
+                data = parse_line(line, keys, regex)
+                if data:
+                    match = re.search(r"b'([^[]+)\[", line)
                     if not match:
-                        continue
-                    ts = int(datetime.strptime(match.group(1), "%Y-%m-%d %H:%M:%S.%f").timestamp() * 1000000)
-                else:
-                    ts = int(match.group(1).strip())
+                        match = re.search(r"\[(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3})\]", line)
+                        if not match:
+                            continue
+                        ts = int(datetime.strptime(match.group(1), "%Y-%m-%d %H:%M:%S.%f").timestamp() * 1000000)
+                    else:
+                        ts = int(match.group(1).strip())
 
-                if not offset:
-                    offset = ts
-                x_src.append((ts - offset) // 1000)
-                for n in keys:
-                    y_src[n].append(data[n])
-
-                if not ready_event.is_set():
-                    ready_event.set()
-                sleep(0.001)
+                    if not offset:
+                        offset = ts
+                    x_src.append((ts - offset) // 1000)
+                    for n in keys:
+                        y_src[n].append(data[n])
+                    bar()
