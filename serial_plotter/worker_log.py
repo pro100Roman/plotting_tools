@@ -38,16 +38,14 @@ class WorkerLog:
         self.ready_event.clear()
         log_reader(self.logger, self.file_log, self.keys, self.x_src, self.y_src)
         self.ready_event.set()
-        # self.reader.start()
 
     def join(self, timeout=None):
         pass
-        # self.reader.join(timeout)
 
 
 def log_reader(logger, file_log, keys, x_src, y_src):
     regex=r"-?\d+(?:\.\d+)?"
-    with open(file_log, mode='r', newline='') as file:
+    with open(file_log, mode='r', newline='', encoding="utf-8") as file:
         lines = file.readlines()
         offset = None
 
