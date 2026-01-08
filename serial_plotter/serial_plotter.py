@@ -98,7 +98,8 @@ def main():
                 log_file_name,
                 args.file,
                 stop_event, ready_event,
-                x_src = x_buf, y_src = y_bufs
+                x_src = x_buf, y_src = y_bufs,
+                ts_inc_us = args.st * 1000
             )
         except Exception as e:
             logger.error(f"An unexpected error occurred: {e}")

@@ -16,6 +16,7 @@ class WorkerLog:
             stop_event:Event,
             ready_event:Event,
             x_src:deque=[], y_src:deque=[],
+            ts_inc_us = 0
     ):
         if logger_name:
             self.logger = logging.getLogger(logger_name)
@@ -31,40 +32,45 @@ class WorkerLog:
         self.y_src = y_src
         self.keys = list(y_src.keys())
         self.logger.info(f"Keys={self.keys}")
+        self.ts_inc_us = ts_inc_us
 
         self.logger.info("Reading file... Close the plot window or Ctrl+C to stop.")
 
     def start(self):
         self.ready_event.clear()
-        log_reader(self.logger, self.file_log, self.keys, self.x_src, self.y_src)
+        log_reader(self.logger, self.file_log, self.keys, self.x_src, self.y_src, self.ts_inc_us)
         self.ready_event.set()
 
     def join(self, timeout=None):
         pass
 
 
-def log_reader(logger, file_log, keys, x_src, y_src):
+def log_reader(logger, file_log, keys, x_src, y_src, ts_inc_us):
     regex=r"-?\d+(?:\.\d+)?"
     with open(file_log, mode='r', newline='', encoding="utf-8") as file:
         lines = file.readlines()
         offset = None
-
+        ts = 0
         with alive_progress.alive_bar(len(lines)) as bar:
             for line in lines:
                 data = parse_line(line, keys, regex)
                 if data:
-                    match = re.search(r"b'([^[]+)\[", line)
-                    if not match:
-                        match = re.search(r"\[(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3})\]", line)
+                    if ts_inc_us == 0:
+                        match = re.search(r"b'([^[]+)\[", line)
                         if not match:
-                            continue
-                        ts = int(datetime.strptime(match.group(1), "%Y-%m-%d %H:%M:%S.%f").timestamp() * 1000000)
+                            match = re.search(r"\[(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3})\]", line)
+                            if not match:
+                                continue
+                            ts = int(datetime.strptime(match.group(1), "%Y-%m-%d %H:%M:%S.%f").timestamp())
+                        else:
+                            ts = int(match.group(1).strip())
                     else:
-                        ts = int(match.group(1).strip())
+                        ts += ts_inc_us
 
                     if not offset:
                         offset = ts
-                    x_src.append((ts - offset) // 1000)
+                    # set time in sec
+                    x_src.append((ts - offset) / 1000000)
                     for n in keys:
                         y_src[n].append(data[n])
                     bar()

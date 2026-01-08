@@ -89,7 +89,7 @@ def serial_reader(logger, regex, ser, keys, x_src, y_src, ready_event, stop_even
                             t_rel = (time.monotonic() - start)
                         else:
                             t_rel += x_delta
-
+                        # set time in sec
                         x_src.append(t_rel / 1000)
                         for k in keys:
                             y_src[k].append(vals[k])
