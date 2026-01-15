@@ -12,6 +12,7 @@ from collections import deque
 import logging
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
+from pathlib import Path
 
 def keyboard_input(in_q: queue.Queue):
     """Reads user input and pushes it to the queue."""
@@ -42,9 +43,10 @@ def main():
     p.add_argument("-t",  dest="timeout",  default=1,      help="serial port timeout in s, default=1")
     p.add_argument("-k",  dest="keys",     default=("out", "down", "up",), nargs="+", help="key word to find")
     p.add_argument("-wp", default=5000, type=int, help="number of data points to show")
-    p.add_argument("-st", default=5,   type=int, help="time between samples in ms")
-    p.add_argument("-f",  dest="file", help="if set data will be saved to this file in case of worker_csv csv file to open and plot")
-    p.add_argument("-n",  dest="name", default="test", help="plot name")
+    p.add_argument("-st", default=5,    type=int, help="time between samples in ms")
+    p.add_argument("-s",  dest="start_time", default=0,    type=int, help="time between samples in ms")
+    p.add_argument("-f",  dest="file",  help="if set data will be saved to this file in case of worker_csv csv file to open and plot")
+    p.add_argument("-n",  dest="name",  default=None, help="plot name")
     args = p.parse_args()
 
     log_file_name = f"{args.file}_{datetime.now().strftime('%Y-%m-%d_%H_%M_%S')}.log" if args.file else "data plotter"
@@ -55,7 +57,10 @@ def main():
     handler.setFormatter(formatter)
     logger.addHandler(handler)
 
-    if args.file and args.worker != "worker_csv" and args.worker != "worker_log":
+    if (args.file and
+            args.worker != "worker_csv" and
+            args.worker != "worker_log" and
+            args.worker != "worker_log_cut"):
         file_handler = logging.FileHandler(log_file_name)
         file_handler.setFormatter(formatter)
         logger.addHandler(file_handler)
@@ -104,6 +109,21 @@ def main():
         except Exception as e:
             logger.error(f"An unexpected error occurred: {e}")
 
+    elif args.worker == "worker_log_cut":
+        from worker_log_cut import WorkerLogCut
+        try:
+            worker = WorkerLogCut(
+                log_file_name,
+                args.file,
+                stop_event, ready_event,
+                x_src = x_buf, y_src = y_bufs,
+                ts_inc_us = args.st * 1000,
+                start_time_s = args.start_time,
+                sample_duration_ms = args.wp
+            )
+        except Exception as e:
+            logger.error(f"An unexpected error occurred: {e}")
+
     elif args.worker == "worker_mqtt":
         from worker_mqtt import WorkerMqtt
         try:
@@ -129,6 +149,13 @@ def main():
 
     fig, ax = plt.subplots(figsize=(12, 6))
     fig.canvas.mpl_connect('close_event', lambda event: on_close(event, stop_event))
+
+    if not args.name and args.file:
+        args.name = Path(args.file).stem
+    elif not args.name:
+        args.name = "data"
+
+    fig.canvas.manager.set_window_title(args.name)
 
     lines = {}
     for k in args.keys:
