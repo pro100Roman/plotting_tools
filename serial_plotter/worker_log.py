@@ -1,9 +1,11 @@
+"""
+Plots the data collected in *.log output file from serial_plotter.py
+"""
+
 import logging
 from collections import deque
-from time import sleep
 import re
 from threading import Event
-from threading import Thread
 import os
 from worker_serial_str import parse_line
 from datetime import datetime

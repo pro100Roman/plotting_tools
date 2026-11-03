@@ -10,15 +10,14 @@ import threading
 import queue
 from collections import deque
 import logging
-import matplotlib.pyplot as plt
-import matplotlib.animation as animation
 from pathlib import Path
 
-def keyboard_input(in_q: queue.Queue):
+def keyboard_input(logger, in_q: queue.Queue):
     """Reads user input and pushes it to the queue."""
     while True:
         line = sys.stdin.readline()
-        in_q.put(line)
+        logger.info(f"---> {line[:-1]}")
+        # in_q.put(line)
 
 def plot_update(frame, ax, lines, ready_event:threading.Event, x_buf:deque, y_bufs:deque):
     # Update data each frame
@@ -57,139 +56,151 @@ def main():
     handler.setFormatter(formatter)
     logger.addHandler(handler)
 
-    if (args.file and
-            args.worker != "worker_csv" and
-            args.worker != "worker_log" and
-            args.worker != "worker_log_cut"):
-        file_handler = logging.FileHandler(log_file_name)
-        file_handler.setFormatter(formatter)
-        logger.addHandler(file_handler)
+    try:
 
-    stop_event = threading.Event()
-    ready_event = threading.Event()
+        if (args.file and
+                args.worker != "worker_csv" and
+                args.worker != "worker_log" and
+                args.worker != "worker_log_cut"):
+            file_handler = logging.FileHandler(log_file_name)
+            file_handler.setFormatter(formatter)
+            logger.addHandler(file_handler)
 
-    x_buf  = deque(maxlen=args.wp)
-    y_bufs = {k: deque(maxlen=args.wp) for k in args.keys}
+        in_q = queue.Queue()
+        keyboard_thread = threading.Thread(target=keyboard_input, args=(logger, in_q,), daemon=True)
+        keyboard_thread.start()
 
-    if args.worker == "worker_serial_str":
-        from worker_serial_str import WorkerSerialStr
-        try:
-            worker = WorkerSerialStr(
-                log_file_name,
-                args.port, int(args.baudrate), float(args.timeout),
-                stop_event, ready_event,
-                args.st,
-                x_src = x_buf, y_src = y_bufs
-            )
-        except Exception as e:
-            logger.error(f"An unexpected error occurred: {e}")
+        stop_event = threading.Event()
+        ready_event = threading.Event()
 
-    elif args.worker == "worker_csv":
-        from worker_csv import WorkerCsv
-        try:
-            worker = WorkerCsv(
-                log_file_name,
-                args.file,
-                stop_event, ready_event,
-                x_src = x_buf, y_src = y_bufs
-            )
-        except Exception as e:
-            logger.error(f"An unexpected error occurred: {e}")
+        x_buf  = deque(maxlen=args.wp)
+        y_bufs = {k: deque(maxlen=args.wp) for k in args.keys}
 
-    elif args.worker == "worker_log":
-        from worker_log import WorkerLog
-        try:
-            worker = WorkerLog(
-                log_file_name,
-                args.file,
-                stop_event, ready_event,
-                x_src = x_buf, y_src = y_bufs,
-                ts_inc_us = args.st * 1000
-            )
-        except Exception as e:
-            logger.error(f"An unexpected error occurred: {e}")
+        if args.worker == "worker_serial_str":
+            from worker_serial_str import WorkerSerialStr
+            try:
+                y_bufs["filt"] = deque(maxlen=args.wp)
+                worker = WorkerSerialStr(
+                    log_file_name,
+                    args.port, int(args.baudrate), float(args.timeout),
+                    stop_event, ready_event,
+                    args.st,
+                    x_src = x_buf, y_src = y_bufs
+                )
+            except Exception as e:
+                logger.error(f"An unexpected error occurred: {e}")
 
-    elif args.worker == "worker_log_cut":
-        from worker_log_cut import WorkerLogCut
-        try:
-            worker = WorkerLogCut(
-                log_file_name,
-                args.file,
-                stop_event, ready_event,
-                x_src = x_buf, y_src = y_bufs,
-                ts_inc_us = args.st * 1000,
-                start_time_s = args.start_time,
-                sample_duration_ms = args.wp
-            )
-        except Exception as e:
-            logger.error(f"An unexpected error occurred: {e}")
+        elif args.worker == "worker_csv":
+            from worker_csv import WorkerCsv
+            try:
+                worker = WorkerCsv(
+                    log_file_name,
+                    args.file,
+                    stop_event, ready_event,
+                    x_src = x_buf, y_src = y_bufs
+                )
+            except Exception as e:
+                logger.error(f"An unexpected error occurred: {e}")
 
-    elif args.worker == "worker_mqtt":
-        from worker_mqtt import WorkerMqtt
-        try:
-            worker = WorkerMqtt(
-                log_file_name,
-                args.name,
-                stop_event, ready_event,
-                x_src = x_buf, y_src = y_bufs
-            )
-        except Exception as e:
-            logger.error(f"An unexpected error occurred: {e}")
-    else:
-        raise Exception("worker script not provided")
+        elif args.worker == "worker_log":
+            from worker_log import WorkerLog
+            try:
+                worker = WorkerLog(
+                    log_file_name,
+                    args.file,
+                    stop_event, ready_event,
+                    x_src = x_buf, y_src = y_bufs,
+                    ts_inc_us = args.st * 1000
+                )
+            except Exception as e:
+                logger.error(f"An unexpected error occurred: {e}")
 
-    worker.start()
+        elif args.worker == "worker_log_cut":
+            from worker_log_cut import WorkerLogCut
+            try:
+                worker = WorkerLogCut(
+                    log_file_name,
+                    args.file,
+                    stop_event, ready_event,
+                    x_src = x_buf, y_src = y_bufs,
+                    ts_inc_us = args.st * 1000,
+                    start_time_s = args.start_time,
+                    sample_duration_ms = args.wp
+                )
+            except Exception as e:
+                logger.error(f"An unexpected error occurred: {e}")
 
-    in_q = queue.Queue()
-    keyboard_thread = threading.Thread(target=keyboard_input, args=(in_q,), daemon=True)
-    keyboard_thread.start()
-
-    if args.worker != "worker_log":
-        plt.ion()
-
-    fig, ax = plt.subplots(figsize=(12, 6))
-    fig.canvas.mpl_connect('close_event', lambda event: on_close(event, stop_event))
-
-    if not args.name and args.file:
-        args.name = Path(args.file).stem
-    elif not args.name:
-        args.name = "data"
-
-    fig.canvas.manager.set_window_title(args.name)
-
-    lines = {}
-    for k in args.keys:
-        if args.worker == "worker_log":
-            line, = ax.plot(x_buf, y_bufs[k], label=k)
+        elif args.worker == "worker_mqtt":
+            from worker_mqtt import WorkerMqtt
+            try:
+                worker = WorkerMqtt(
+                    log_file_name,
+                    args.name,
+                    stop_event, ready_event,
+                    x_src = x_buf, y_src = y_bufs
+                )
+            except Exception as e:
+                logger.error(f"An unexpected error occurred: {e}")
         else:
-            line, = ax.plot([], [], label=k)  # no explicit colors
-            lines[k] = line
+            raise Exception("worker script not provided")
 
-    ax.set_xlabel("Time [s]")
-    ax.set_ylabel("Value")
-    ax.set_title(args.name)
-    ax.legend(loc='upper left', bbox_to_anchor=(1, 1))
-    ax.grid(True, linestyle="--", alpha=0.5)
+        worker.start()
 
-    if args.worker != "worker_log":
-        anim = animation.FuncAnimation(fig,
-                                       plot_update,
-                                       fargs=(ax, lines, ready_event, x_buf, y_bufs),
-                                       interval=1,
-                                       blit=False,
-                                       cache_frame_data=False)
-    else:
+        plt = None
+
+        import matplotlib.pyplot as plt
+        import matplotlib.animation as animation
+
+        if args.worker != "worker_log":
+            plt.ion()
+
+        fig, ax = plt.subplots(figsize=(12, 6))
+        fig.canvas.mpl_connect('close_event', lambda event: on_close(event, stop_event))
+
+        if not args.name and args.file:
+            args.name = Path(args.file).stem
+        elif not args.name:
+            args.name = "data"
+
+        fig.canvas.manager.set_window_title(args.name)
+
+        lines = {}
+        for k in args.keys:
+            if args.worker == "worker_log":
+                line, = ax.plot(x_buf, y_bufs[k], label=k)
+            else:
+                line, = ax.plot([], [], label=k)  # no explicit colors
+                lines[k] = line
+
+        if "filt" in y_bufs:
+            line, = ax.plot([], [], label="filt")  # no explicit colors
+            lines["filt"] = line
+
+        ax.set_xlabel("Time [s]")
+        ax.set_ylabel("Value")
+        ax.set_title(args.name)
+        ax.legend(loc='upper left', bbox_to_anchor=(1, 1))
+        ax.grid(True, linestyle="--", alpha=0.5)
+
+        if args.worker != "worker_log":
+            anim = animation.FuncAnimation(fig,
+                                           plot_update,
+                                           fargs=(ax, lines, ready_event, x_buf, y_bufs),
+                                           interval=10,
+                                           blit=False,
+                                           cache_frame_data=False)
+            while not stop_event.is_set():
+                plt.pause(0.05)
+
         plt.show()
 
-    try:
-        while not stop_event.is_set():
-            plt.pause(0.01)
     except KeyboardInterrupt:
         raise
     except Exception as e:
         logger.error(f"An unexpected error occurred: {e}")
     finally:
-        plt.close(fig)
+        if plt:
+            plt.close(fig)
         stop_event.set()
         worker.join(timeout=0.1)
         keyboard_thread.join(timeout=0.1)

@@ -7,6 +7,7 @@ import time
 import serial
 import serial.tools.list_ports
 import serial.tools.list_ports as lp
+from filters.one_euro_filter import OneEuroFilter
 
 class WorkerSerialStr:
     def __init__(
@@ -32,8 +33,12 @@ class WorkerSerialStr:
         self.x_src = x_src
         self.y_src = y_src
         self.regex = regex
+        self.filter = OneEuroFilter(200, 2, 0, 1)
 
         self.keys = list(y_src.keys())
+        if "filt" in self.keys:
+            self.keys.remove("filt")
+
         self.logger.info(f"Keys={self.keys}")
 
         try:
@@ -52,7 +57,7 @@ class WorkerSerialStr:
 
         self.reader = Thread(
             target=serial_reader,
-            args=(self.logger, self.regex, self.ser, self.keys, self.x_src, self.y_src, ready_event, stop_event, self.delta_time),
+            args=(self.logger, self.regex, self.ser, self.keys, self.x_src, self.y_src, ready_event, stop_event, self.delta_time, self.filter.filter),
             daemon=True
         )
 
@@ -72,7 +77,7 @@ def parse_line(line: str, keys, regex):
     return vals
 
 
-def serial_reader(logger, regex, ser, keys, x_src, y_src, ready_event, stop_event, x_delta:int=0):
+def serial_reader(logger, regex, ser, keys, x_src, y_src, ready_event, stop_event, x_delta:int=0, filt=None):
     t_rel = 0
     start = time.monotonic()
     try:
@@ -93,6 +98,9 @@ def serial_reader(logger, regex, ser, keys, x_src, y_src, ready_event, stop_even
                         x_src.append(t_rel / 1000)
                         for k in keys:
                             y_src[k].append(vals[k])
+                        if "filt" in y_src and filt:
+                            y_src["filt"].append(filt(vals["out"]))
+
                         if not ready_event.is_set():
                             ready_event.set()
 

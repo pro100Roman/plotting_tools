@@ -9,6 +9,9 @@ from worker_serial_str import parse_line
 from datetime import datetime
 import alive_progress
 
+"""
+Cuts log from the start point for the provided duration 
+"""
 
 class WorkerLogCut:
     def __init__(
