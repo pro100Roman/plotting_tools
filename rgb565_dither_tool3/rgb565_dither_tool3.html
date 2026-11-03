@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>RGB565 Dithering Lab</title>
+<style>
+:root{color-scheme:dark;--bg:#11151a;--panel:#1a2027;--line:#303944;--text:#e8edf2;--muted:#9eabb8;--accent:#76b7ff}
+*{box-sizing:border-box} body{margin:0;font:14px/1.45 system-ui,-apple-system,Segoe UI,sans-serif;background:var(--bg);color:var(--text)}
+header{position:sticky;top:0;z-index:2;background:#11151af2;border-bottom:1px solid var(--line);backdrop-filter:blur(8px)}
+.controls{max-width:1500px;margin:auto;padding:14px 18px;display:flex;gap:12px;align-items:end;flex-wrap:wrap}
+label{display:grid;gap:5px;color:var(--muted)} input,button{font:inherit} input[type=number]{width:92px;background:#0e1216;color:var(--text);border:1px solid var(--line);border-radius:7px;padding:8px}
+input[type=file]{max-width:330px} button{border:1px solid var(--line);background:#26303a;color:var(--text);padding:8px 13px;border-radius:7px;cursor:pointer} button.primary{background:#1769aa;border-color:#2786d2} button:disabled{opacity:.45;cursor:not-allowed}
+main{max-width:1500px;margin:auto;padding:18px}.hint{color:var(--muted);margin:0 0 14px}.status{min-height:22px;color:#b9d9ff}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(330px,1fr));gap:16px}.card{background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:12px}.card h3{font-size:15px;margin:0 0 9px}.wrap{background:#090b0e;border-radius:7px;overflow:auto;display:flex;justify-content:center;align-items:center;min-height:220px}.wrap canvas{display:block;max-width:100%;height:auto;image-rendering:auto}.meta{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:9px;color:var(--muted)}.meta button{padding:6px 10px}.source-info{font-size:12px}.sep{height:30px;border-left:1px solid var(--line)}
+.wrap canvas{cursor:zoom-in}
+.modal{position:fixed;inset:0;z-index:100;background:#07090ced;display:none;flex-direction:column}.modal.open{display:flex}.modalbar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:10px 14px;background:#151b22;border-bottom:1px solid var(--line)}.modalbar strong{margin-right:auto}.modalbar input[type=range]{width:260px}.modalview{flex:1;overflow:auto;position:relative;background:#080a0d}.zoomstage{min-width:100%;min-height:100%;display:flex;align-items:flex-start;justify-content:flex-start;padding:24px}.zoomstage canvas{display:block;max-width:none;image-rendering:pixelated;image-rendering:crisp-edges;box-shadow:0 0 0 1px #303944;cursor:grab}.zoomstage canvas:active{cursor:grabbing}.zoomval{min-width:54px;font-variant-numeric:tabular-nums}.close{font-size:20px;padding:4px 11px}
+@media(max-width:700px){.sep{display:none}.controls{align-items:stretch}.modalbar input[type=range]{width:160px}}
+</style>
+</head>
+<body>
+<header><div class="controls">
+<label>Вихідне зображення<input id="file" type="file" accept="image/png,image/jpeg,image/webp"></label>
+<div class="sep"></div>
+<label>Ширина<input id="width" type="number" min="1" max="4096" value="480"></label>
+<label>Висота<input id="height" type="number" min="1" max="4096" value="480"></label>
+<button id="aspect">🔗 Пропорції: вимк</button>
+<button id="generate" class="primary" disabled>Згенерувати</button>
+<button id="downloadAll" disabled>Завантажити всі PNG</button>
+<span id="status" class="status"></span>
+</div></header>
+<main>
+<p class="hint">Спочатку зображення масштабується до вказаного розміру (якісний browser downscale), потім кожен алгоритм працює вже з кінцевими пікселями. Результати зберігаються як 24-bit RGB PNG з кольорами на сітці RGB565 — їх можна імпортувати в EEZ Studio без подальшого масштабування.</p>
+<div id="sourceInfo" class="source-info"></div><div id="grid" class="grid"></div>
+</main>
+<div id="previewModal" class="modal" role="dialog" aria-modal="true">
+  <div class="modalbar">
+    <strong id="previewTitle">Попередній перегляд</strong>
+    <label>Масштаб <input id="zoomRange" type="range" min="100" max="1000" step="25" value="100"></label>
+    <span id="zoomValue" class="zoomval">100%</span>
+    <button id="zoom100">100%</button><button id="zoomFit">За розміром</button>
+    <button id="previewDownload">Завантажити PNG</button>
+    <button id="previewClose" class="close" title="Закрити">×</button>
+  </div>
+  <div id="modalView" class="modalview"><div id="zoomStage" class="zoomstage"></div></div>
+</div>
+<script>
+'use strict';
+const $=id=>document.getElementById(id), file=$('file'), W=$('width'), H=$('height'), gen=$('generate'), all=$('downloadAll'), grid=$('grid'), status=$('status'), info=$('sourceInfo'), aspectBtn=$('aspect');
+let source=null, sourceName='image', keepAspect=false, ratio=1, outputs=[], previewCanvas=null, previewFilename='';
+const modal=$('previewModal'), modalView=$('modalView'), zoomStage=$('zoomStage'), zoomRange=$('zoomRange'), zoomValue=$('zoomValue'), previewTitle=$('previewTitle');
+const B4=[[0,8,2,10],[12,4,14,6],[3,11,1,9],[15,7,13,5]];
+const B8=[[0,32,8,40,2,34,10,42],[48,16,56,24,50,18,58,26],[12,44,4,36,14,46,6,38],[60,28,52,20,62,30,54,22],[3,35,11,43,1,33,9,41],[51,19,59,27,49,17,57,25],[15,47,7,39,13,45,5,37],[63,31,55,23,61,29,53,21]];
+file.onchange=async()=>{const f=file.files[0];if(!f)return;sourceName=f.name.replace(/\.[^.]+$/,''); source=await createImageBitmap(f); ratio=source.width/source.height; info.textContent=`Вихідне зображення: ${source.width} × ${source.height}`; gen.disabled=false;};
+aspectBtn.onclick=()=>{keepAspect=!keepAspect;aspectBtn.textContent=`🔗 Пропорції: ${keepAspect?'увімк':'вимк'}`};
+W.oninput=()=>{if(keepAspect&&source)H.value=Math.max(1,Math.round(+W.value/ratio))}; H.oninput=()=>{if(keepAspect&&source)W.value=Math.max(1,Math.round(+H.value*ratio))};
+function canvas(w,h){const c=document.createElement('canvas');c.width=w;c.height=h;return c}
+function resize(){const w=+W.value,h=+H.value,c=canvas(w,h),x=c.getContext('2d',{willReadFrequently:true});x.imageSmoothingEnabled=true;x.imageSmoothingQuality='high';x.drawImage(source,0,0,w,h);return x.getImageData(0,0,w,h)}
+const q=(v,n)=>Math.round(v*(n-1)/255)*255/(n-1); const clamp=v=>v<0?0:v>255?255:v;
+function quant(src){const d=new Uint8ClampedArray(src.data), n=d.length;for(let i=0;i<n;i+=4){d[i]=q(d[i],32);d[i+1]=q(d[i+1],64);d[i+2]=q(d[i+2],32);d[i+3]=255}return new ImageData(d,src.width,src.height)}
+function ordered(src,m){const d=new Uint8ClampedArray(src.data),s=m.length,N=s*s;for(let y=0;y<src.height;y++)for(let x=0;x<src.width;x++){let i=(y*src.width+x)*4,t=(m[y%s][x%s]+.5)/N-.5;d[i]=q(clamp(d[i]+t*255/31),32);d[i+1]=q(clamp(d[i+1]+t*255/63),64);d[i+2]=q(clamp(d[i+2]+t*255/31),32);d[i+3]=255}return new ImageData(d,src.width,src.height)}
+function floyd(src,serp){let a=new Float32Array(src.data),w=src.width,h=src.height;const add=(x,y,e,k)=>{if(x<0||x>=w||y<0||y>=h)return;let j=(y*w+x)*4;a[j]+=e[0]*k;a[j+1]+=e[1]*k;a[j+2]+=e[2]*k};for(let y=0;y<h;y++){let rev=serp&&(y&1),start=rev?w-1:0,end=rev?-1:w,step=rev?-1:1;for(let x=start;x!==end;x+=step){let i=(y*w+x)*4,old=[clamp(a[i]),clamp(a[i+1]),clamp(a[i+2])],nw=[q(old[0],32),q(old[1],64),q(old[2],32)],e=[old[0]-nw[0],old[1]-nw[1],old[2]-nw[2]];a[i]=nw[0];a[i+1]=nw[1];a[i+2]=nw[2];a[i+3]=255;add(x+step,y,e,7/16);add(x-step,y+1,e,3/16);add(x,y+1,e,5/16);add(x+step,y+1,e,1/16)}}return new ImageData(new Uint8ClampedArray(a),w,h)}
+function rng(seed){return()=>{seed|=0;seed=seed+0x6D2B79F5|0;let t=Math.imul(seed^seed>>>15,1|seed);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}}
+function noiseDither(src,map,size,channelShift=true){let d=new Uint8ClampedArray(src.data),w=src.width,h=src.height;for(let y=0;y<h;y++)for(let x=0;x<w;x++){let i=(y*w+x)*4;const at=(dx,dy)=>map[((y+dy)%size)*size+((x+dx)%size)];let nr=at(0,0),ng=channelShift?at(31%size,17%size):nr,nb=channelShift?at(11%size,37%size):nr;d[i]=q(clamp(d[i]+nr*255/31),32);d[i+1]=q(clamp(d[i+1]+ng*255/63),64);d[i+2]=q(clamp(d[i+2]+nb*255/31),32);d[i+3]=255}return new ImageData(d,w,h)}
+function whiteMap(size=64){let r=rng(12345),a=new Float32Array(size*size);for(let i=0;i<a.length;i++)a[i]=r()-.5;return a}
+function highpass(size=64){let r=rng(12345),raw=new Float32Array(size*size),out=new Float32Array(size*size);for(let i=0;i<raw.length;i++)raw[i]=r();const at=(x,y)=>raw[((y+size)%size)*size+((x+size)%size)];let mn=1e9,mx=-1e9;for(let y=0;y<size;y++)for(let x=0;x<size;x++){let sum=0,wt=0;for(let dy=-2;dy<=2;dy++)for(let dx=-2;dx<=2;dx++){let k=Math.exp(-(dx*dx+dy*dy)/4);sum+=at(x+dx,y+dy)*k;wt+=k}let v=at(x,y)-sum/wt;out[y*size+x]=v;mn=Math.min(mn,v);mx=Math.max(mx,v)}for(let i=0;i<out.length;i++)out[i]=(out[i]-mn)/(mx-mn)-.5;return out}
+// Practical void-and-cluster-like threshold map: iteratively moves points from dense clusters to voids on a torus, then ranks by local density.
+function voidCluster(size=64,iters=1800){let r=rng(12345),N=size*size,p=new Uint8Array(N),idx=[...Array(N).keys()].sort(()=>r()-.5);for(let i=0;i<N/2;i++)p[idx[i]]=1;const dens=(pos,val)=>{let x=pos%size,y=(pos/size)|0,s=0;for(let dy=-4;dy<=4;dy++)for(let dx=-4;dx<=4;dx++){let xx=(x+dx+size)%size,yy=(y+dy+size)%size;if(p[yy*size+xx]===val)s+=Math.exp(-(dx*dx+dy*dy)/(2*1.5*1.5))}return s};for(let k=0;k<iters;k++){let ci=-1,cd=-1;for(let i=0;i<N;i++)if(p[i]){let d=dens(i,1);if(d>cd){cd=d;ci=i}}p[ci]=0;let vi=-1,vd=1e9;for(let i=0;i<N;i++)if(!p[i]){let d=dens(i,1);if(d<vd){vd=d;vi=i}}p[vi]=1}let ranks=new Float32Array(N),order=[...Array(N).keys()];order.sort((a,b)=>{let da=dens(a,1)+(p[a]?-.15:.15),db=dens(b,1)+(p[b]?-.15:.15);return da-db});for(let k=0;k<N;k++)ranks[order[k]]=(k+.5)/N-.5;return ranks}
+function put(img){const c=canvas(img.width,img.height);c.getContext('2d').putImageData(img,0,0);return c}
+function addCard(name,img,filename){let c=put(img),card=document.createElement('section');card.className='card';card.innerHTML=`<h3>${name}</h3><div class="wrap" title="Натисніть для збільшеного перегляду"></div><div class="meta"><span>${img.width}×${img.height}</span><button>Завантажити PNG</button></div>`;card.querySelector('.wrap').append(c);card.querySelector('button').onclick=()=>downloadCanvas(c,filename);c.onclick=()=>openPreview(c,name,filename);grid.append(card);outputs.push({c,filename})}
+
+function setZoom(v){v=Math.max(100,Math.min(1000,Math.round(v/25)*25));zoomRange.value=v;zoomValue.textContent=v+'%';if(previewCanvas){previewCanvas.style.width=(previewCanvas.width*v/100)+'px';previewCanvas.style.height=(previewCanvas.height*v/100)+'px'}}
+function openPreview(srcCanvas,title,filename){previewCanvas=canvas(srcCanvas.width,srcCanvas.height);previewCanvas.getContext('2d').drawImage(srcCanvas,0,0);previewFilename=filename;previewTitle.textContent=title+' · '+srcCanvas.width+'×'+srcCanvas.height;zoomStage.innerHTML='';zoomStage.append(previewCanvas);modal.classList.add('open');document.body.style.overflow='hidden';setZoom(100);modalView.scrollLeft=0;modalView.scrollTop=0}
+function closePreview(){modal.classList.remove('open');document.body.style.overflow='';previewCanvas=null}
+zoomRange.oninput=()=>setZoom(+zoomRange.value);$('zoom100').onclick=()=>setZoom(100);$('zoomFit').onclick=()=>{if(!previewCanvas)return;let aw=Math.max(1,modalView.clientWidth-48),ah=Math.max(1,modalView.clientHeight-48),z=Math.min(1000,Math.max(100,Math.floor(Math.min(aw/previewCanvas.width,ah/previewCanvas.height)*100/25)*25));setZoom(z)};$('previewClose').onclick=closePreview;$('previewDownload').onclick=()=>previewCanvas&&downloadCanvas(previewCanvas,previewFilename);modal.onclick=e=>{if(e.target===modal)closePreview()};document.addEventListener('keydown',e=>{if(e.key==='Escape'&&modal.classList.contains('open'))closePreview()});
+// Drag-to-pan in addition to normal scrollbars.
+let dragging=false,dragX=0,dragY=0,startL=0,startT=0;zoomStage.addEventListener('pointerdown',e=>{if(e.target.tagName!=='CANVAS')return;dragging=true;dragX=e.clientX;dragY=e.clientY;startL=modalView.scrollLeft;startT=modalView.scrollTop;e.target.setPointerCapture(e.pointerId)});zoomStage.addEventListener('pointermove',e=>{if(!dragging)return;modalView.scrollLeft=startL-(e.clientX-dragX);modalView.scrollTop=startT-(e.clientY-dragY)});zoomStage.addEventListener('pointerup',()=>dragging=false);zoomStage.addEventListener('pointercancel',()=>dragging=false);
+function downloadCanvas(c,name){c.toBlob(b=>{let u=URL.createObjectURL(b),a=document.createElement('a');a.href=u;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(u),1000)},'image/png')}
+all.onclick=async()=>{for(const o of outputs){downloadCanvas(o.c,o.filename);await new Promise(r=>setTimeout(r,180))}};
+gen.onclick=async()=>{if(!source)return;gen.disabled=true;all.disabled=true;grid.innerHTML='';outputs=[];status.textContent='Масштабування…';await new Promise(r=>setTimeout(r,20));let src=resize(),base=`${sourceName}_${src.width}x${src.height}`;addCard('00 · Resized RGB888',src,`${base}_00_rgb888.png`);status.textContent='RGB565 и Bayer…';await new Promise(r=>setTimeout(r,20));addCard('01 · RGB565 без dithering',quant(src),`${base}_01_rgb565_none.png`);addCard('02 · Bayer 4×4',ordered(src,B4),`${base}_02_bayer4.png`);addCard('03 · Bayer 8×8',ordered(src,B8),`${base}_03_bayer8.png`);status.textContent='Floyd–Steinberg…';await new Promise(r=>setTimeout(r,20));addCard('04 · Floyd–Steinberg',floyd(src,false),`${base}_04_floyd.png`);addCard('05 · Floyd–Steinberg serpentine',floyd(src,true),`${base}_05_floyd_serpentine.png`);status.textContent='Noise dithering…';await new Promise(r=>setTimeout(r,20));addCard('06 · White noise',noiseDither(src,whiteMap(),64),`${base}_06_white_noise.png`);addCard('07 · Blue-noise-like high-pass',noiseDither(src,highpass(),64),`${base}_07_blue_noise_highpass.png`);status.textContent='Void-and-cluster (може тривати кілька секунд)…';await new Promise(r=>setTimeout(r,30));addCard('08 · Blue noise void-and-cluster',noiseDither(src,voidCluster(),64),`${base}_08_blue_noise_void_cluster.png`);status.textContent='Готово';gen.disabled=false;all.disabled=false};
+</script>
+</body></html>
