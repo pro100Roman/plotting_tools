@@ -33,6 +33,7 @@ class WorkerSerialStr:
         self.x_src = x_src
         self.y_src = y_src
         self.regex = regex
+        self.reader = None
         self.filter = OneEuroFilter(200, 2, 0, 1)
 
         self.keys = list(y_src.keys())
@@ -62,10 +63,12 @@ class WorkerSerialStr:
         )
 
     def start(self):
-        self.reader.start()
+        if self.reader:
+            self.reader.start()
 
     def join(self, timeout=None):
-        self.reader.join(timeout)
+        if self.reader:
+            self.reader.join(timeout)
 
 def parse_line(line: str, keys, regex):
     vals = {}
